@@ -1,124 +1,127 @@
-import React, { useState, useRef  } from 'react';
-import './App.css';
-
+import { Component } from 'react';
 // component
-import { Input, Button } from 'reactstrap';
-import { Toast } from 'primereact/toast';
+import { Input, Toast, ToastBody, ToastHeader } from 'reactstrap';
 
-import 'primeicons/primeicons.css';
-import 'primereact/resources/themes/saga-blue/theme.css';
-import 'primereact/resources/primereact.css';
-import 'primeflex/primeflex.css';
-import axios from 'axios';
+import axiosInstance from './helper/config';
 
-
-const App = () => {
-  const toast = useRef(null);
-  const [dataInput, setDataInput] = useState('');
-  const [data, setData] = useState([]);
-
-
-  const disPlayInformation = (type, content) => {
-      toast.current.show(
-        {
-          severity: type, 
-          detail: content, 
-          life: 3000}
-        );
+export class App extends Component {
+  state = {
+    input: '',
+    todos: [],
+    error: '',
+    success: '',
+    loading: false,
+    editInd: -1,
   }
 
-  const onHandleChange = (event) => {
-    setDataInput(event.target.value);
-  }
-
-  const onHandldeKeyDown = (e) => {
-    if(e.keyCode === 13) {
-      setData(data.concat(dataInput));
-      setDataInput('');
+  async componentDidMount() {
+    this.setState({ loading: true });
+    try {
+      const { data, status } = await axiosInstance.get('/');
+      if (status !== 200) throw new Error('Khong fetch duoc data');
+      this.setState({ todos: data });
+    } catch (error) {
+      this.setState({ error });
+    } finally {
+      this.setState({ loading: false });
     }
   }
 
-  const onDelete = (index) => {
-    const dataNew = [...data];
-    const lenghtStart = dataNew.length;
-
-    dataNew.splice(index, 1);
-    setData(dataNew);
-
-    const lenghtEnd = dataNew.length;
-
-    if(lenghtEnd === lenghtStart-1) {
-      disPlayInformation("success","Delete Successful");  
-    } else {
-      disPlayInformation("error","Delete Failer");
-    // toast.current.show(
-    //   {
-    //     severity:'error', 
-    //     detail:'Delete Failer', 
-    //     life: 3000}
-    //   );
-    } 
-  }
-
-  const onHandleChangeCheckBox = async (event, index) => {
-    if(event.target.checked === true) {
-      console.log("call API");
-      const URL = "http://localhost:3000/data";
+  addTodo = async ({ keyCode }) => {
+    const { input, todos, success } = this.state;
+    if (keyCode === 13) {
       try {
-        const respose = await axios.post(URL, { name: data[index] });
-          console.log(respose);
-          disPlayInformation("success",`Update Successful - Status: ${respose.status} - statusText: ${respose.statusText}`); 
+        const { data } = await axiosInstance.post('/', {
+          title: input,
+          checked: false,
+        });
+        this.setState({ todos: todos.concat(data), success: 'Success !!', input: '' });
+        setTimeout(() => {
+          this.setState({ success: '' });
+        }, 1000);
       } catch (error) {
-          console.log(error);
-          disPlayInformation("error",`Update Failer - Error: ${error}`); 
+        this.setState({ error });
       }
-
-    } else {
-      console.log("No Call API");
     }
-
   }
 
-  return (
-    <div className="App" >
-      
-      <Toast ref={ toast } /> 
+  checkedTodo = async (ind, id, checked) => {
+    const { todos } = this.state;
+    try {
+      await axiosInstance.put(`/${id}`, { checked });
+      const newTodos = [...todos];
+      newTodos[ind].checked = checked;
+      this.setState({ todos: newTodos });
+    } catch (error) {
+      this.setState({ error });
+    }
+  }
 
-      <h1>Please typing data</h1>
-      <Input
-        className="input-size"
-        value={ dataInput }
-        placeholder="Please typing data" 
-        type="text"
-        onChange={(event) => onHandleChange(event)}
-        onKeyDown={(e) => onHandldeKeyDown(e)}
-      />
-      <br />
-      {
-        data.map((dataEnter, index) => {
-          return (
-            <div key={ index } className="display-data">
-              <Input 
+  editTodo = async (ind, id, keyCode) => {
+    const { todos } = this.state;
+    if (keyCode === 13) {
+      await axiosInstance.put(`/${id}`, { title: todos[ind].title });
+      this.setState({ editInd: -1 });
+    }
+  }
+
+  render() {
+    const {
+      input,
+      loading,
+      todos,
+      editInd,
+      error,
+      success,
+    } = this.state;
+    return loading ? (
+      <div>Loading...</div>
+    ) : (
+        <div>
+          <Input
+            value={input}
+            onChange={({ target }) => this.setState({ input: target.value })}
+            onKeyDown={this.addTodo}
+          />
+          {todos.map(({ id, title, checked }, ind) => (
+            <div
+              key={id}
+            >
+              {
+                ind === editInd ? (
+                  <input
+                    value={title}
+                    onChange={({ target }) => {
+                      const newTodos = [...todos];
+                      newTodos[ind].title = target.value;
+                      this.setState({ todos: newTodos });
+                    }}
+                    onKeyDown={({ keyCode }) => this.editTodo(ind, id, keyCode)}
+                  />
+                ) : (
+                    <div
+                      onClick={() => this.setState({ editInd: ind })}
+                    >{title}</div>
+                  )
+              }
+              <input
                 type="checkbox"
-                onClick={(event) => onHandleChangeCheckBox(event, index)}
-                />
-              <span>  { dataEnter } </span>
-              <Button 
-                color="danger" 
-                size="sm"  
-                className="ml-30"
-                onClick={ () => onDelete(index) }
-                
-                > Delete </Button>
+                checked={checked}
+                onChange={({ target }) => this.checkedTodo(ind, id, target.checked)}
+              />
             </div>
-          )
-        })
-      }
-
-      
-
-    </div>
-  )
+          ))}
+          <Toast isOpen={Boolean(success)}>
+            <ToastHeader toggle={() => this.setState({ success: '' })}>
+              Reactstrap
+            </ToastHeader>
+            <ToastBody>
+              {success}
+            </ToastBody>
+          </Toast>
+        </div>
+      )
+  }
 }
 
-export default App;
+export default App
